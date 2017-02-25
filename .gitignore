@@ -1,0 +1,5 @@
+.gradle/
+.idea/
+src/main/java/Player.java
+build/
+out/
