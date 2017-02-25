@@ -38,7 +38,6 @@ public class AI {
       int distance = scanner.nextInt();
       links.add(new Link(factory1, factory2, distance));
     }
-    links.forEach(System.err::println);
   }
 
   public void start() {
@@ -94,6 +93,9 @@ public class AI {
             bomb.setFrom(arg2);
             bomb.setTo(arg3);
             bomb.setEta(arg4);
+            if (bomb.getEta() == 1) {
+              bombs.remove(entityId);
+            }
           }
           break;
         default:
@@ -113,19 +115,19 @@ public class AI {
 
   private void outputAnswer() {
     List<Command> commands = calculateCommands();
-    if (commands.size() == 1) {
-      System.out.println(commands.get(0));
-    } else {
-      StringBuilder builder = new StringBuilder();
-      commands.forEach(command -> builder.append(command.toString()).append(";"));
-      builder.setLength(builder.length() - 1);
-      System.out.println(builder);
-    }
+    commands.add(new Wait());
+    commands.add(coolMessage());
+
+    StringBuilder builder = new StringBuilder();
+    commands.forEach(command -> builder.append(command.toString()).append(";"));
+    builder.setLength(builder.length() - 1);
+
+    System.out.println(builder);
   }
 
   private List<Command> calculateCommands() {
     List<Command> commands = new ArrayList<>();
-    commands.add(new Wait());
+
     List<Factory> myFactories = factories.values()
       .stream().filter(factory -> factory.getOwner() == Owner.ME)
       .collect(Collectors.toList());
@@ -136,11 +138,23 @@ public class AI {
       .sorted(Comparator.comparingInt(Factory::getCount).reversed())
       .collect(Collectors.toList());
 
+    calculateProductionCommands(myFactories, commands);
     calculateBombCommands(enemyFactories, commands);
     calculateDronesCommand(myFactories, commands);
 
-    commands.add(coolMessage());
     return commands;
+  }
+
+  private void calculateProductionCommands(List<Factory> myFactories, List<Command> commands) {
+    for (Factory myFactory : myFactories) {
+      if (myFactory.getProduction() >= Constants.MAX_PRODUCTION) {
+        continue;
+      }
+      if (myFactory.getCount() >= Constants.PRODUCTION_INCREMENT_THRESHOLD) {
+        commands.add(new Increment(myFactory.getId()));
+        myFactory.setCount(myFactory.getCount() - Constants.PRODUCTION_INCREMENT_COST);
+      }
+    }
   }
 
   private void calculateBombCommands(List<Factory> enemyFactories, List<Command> commands) {
@@ -179,7 +193,15 @@ public class AI {
           continue;
         }
         int distToTarget = neigh.getValue();
-        int score = factory.getProduction() * 6 + (10 - distToTarget) + (8 - target.getCount());
+        int score = (int)(factory.getProduction() * Constants.SCORE_MULTIPLIES_PRODUCTION
+          - distToTarget * Constants.SCORE_MULTIPLIES_DISTANCE
+          - target.getCount() * Constants.SCORE_MULTIPLIES_COUNT);
+        if (target.getOwner() == Owner.ME) {
+          score *= Constants.MY_FACTORY_SCORE_MULTIPLIER;
+        }
+        if (target.getOwner() == Owner.ENEMY) {
+          score *= Constants.ENEMY_FACTORY_SCORE_MULTIPLIER;
+        }
         scores.put(target, score);
       }
 
@@ -193,12 +215,17 @@ public class AI {
           LinkedHashMap::new
         ));
 
+      System.err.println(sortedScores);
+
       for (Factory target : sortedScores.keySet()) {
         if (availableCount <= 0) {
           break;
         }
+        if (availableCount <= target.getCount()) {
+          continue;
+        }
 
-        int sendCount = Math.min(availableCount, target.getCount());
+        int sendCount = Math.min(availableCount, target.getCount() + Constants.ADDITIONAL_SEIZE_CYBORGS);
         commands.add(new Move(factory.getId(), target.getId(), sendCount));
         availableCount -= sendCount;
       }
@@ -206,6 +233,6 @@ public class AI {
   }
 
   private Message coolMessage() {
-    return new Message("Ramp and Bump!!!");
+    return new Message("MWAHAHA!!!!");
   }
 }
