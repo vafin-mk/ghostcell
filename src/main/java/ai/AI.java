@@ -1,8 +1,10 @@
 package ai;
 
+import model.Constants;
 import model.Link;
 import model.Owner;
 import model.commands.Command;
+import model.commands.Message;
 import model.commands.Move;
 import model.commands.Wait;
 import model.entities.Factory;
@@ -97,36 +99,65 @@ public class AI {
   }
 
   private void outputAnswer() {
-    Command command = bestCommand();
-    System.out.println(command);
+    List<Command> commands = calculateCommands();
+    if (commands.size() == 1) {
+      System.out.println(commands.get(0));
+    } else {
+      StringBuilder builder = new StringBuilder();
+      commands.forEach(command -> builder.append(command.toString()).append(";"));
+      builder.setLength(builder.length() - 1);
+      System.out.println(builder);
+    }
   }
 
-  private Command bestCommand() {
+  private List<Command> calculateCommands() {
+    List<Command> commands = new ArrayList<>();
+    commands.add(new Wait());
     List<Factory> myFactories = factories.values()
       .stream().filter(factory -> factory.getOwner() == Owner.ME).collect(Collectors.toList());
-    Optional<Factory> myMostPowerful = myFactories.stream().sorted(Comparator.comparingInt(Factory::getCount).reversed()).findFirst();
-    if (myMostPowerful.isPresent()) {
-      Factory factory = myMostPowerful.get();
+    for (Factory factory : myFactories) {
       Map<Factory, Integer> neigs = factory.getDistancesToNeighbours();
-      Factory bestTarget = null;
-      int bestScore = Integer.MIN_VALUE;
+      Map<Factory, Integer> scores = new HashMap<>();
+      int availableCount = (int) (factory.getCount() * Constants.SEND_CYBORGS_PART) + 1;
+      if (availableCount < 2) {
+        continue;
+      }
+
       for (Map.Entry<Factory, Integer> neigh : neigs.entrySet()) {
         Factory target = neigh.getKey();
-        if (target.getCount() > factory.getCount() / 2) {
+        if (target.getCount() > availableCount) {
           continue;
         }
         int distToTarget = neigh.getValue();
         int score = factory.getProduction() * 5 + (10 - distToTarget) + (10 - target.getCount());
-        if (score > bestScore) {
-          bestScore = score;
-          bestTarget = target;
-        }
+        scores.put(target, score);
       }
-      if (bestTarget != null) {
-        return new Move(factory.getId(), bestTarget.getId(), Math.min(factory.getCount() / 2, bestTarget.getCount() + 1));
+
+      LinkedHashMap<Factory, Integer> sortedScores = scores.entrySet()
+        .stream()
+        .sorted(Map.Entry.comparingByValue(Collections.reverseOrder()))
+        .collect(Collectors.toMap(
+          Map.Entry::getKey,
+          Map.Entry::getValue,
+          (e1, e2) -> e1,
+          LinkedHashMap::new
+        ));
+
+      for (Factory target : sortedScores.keySet()) {
+        if (availableCount <= 0) {
+          break;
+        }
+
+        int sendCount = Math.min(availableCount, target.getCount());
+        commands.add(new Move(factory.getId(), target.getId(), sendCount));
+        availableCount -= sendCount;
       }
     }
+    commands.add(coolMessage());
+    return commands;
+  }
 
-    return new Wait();
+  private Message coolMessage() {
+    return new Message("JERONIMO!!!");
   }
 }
