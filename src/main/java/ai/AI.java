@@ -3,10 +3,8 @@ package ai;
 import model.Constants;
 import model.Link;
 import model.Owner;
-import model.commands.Command;
-import model.commands.Message;
-import model.commands.Move;
-import model.commands.Wait;
+import model.commands.*;
+import model.entities.Bomb;
 import model.entities.Factory;
 import model.entities.Troop;
 import model.graph.Graph;
@@ -22,8 +20,11 @@ public class AI {
 
   final Map<Integer, Factory> factories = new HashMap<>();
   final Map<Integer, Troop> troops = new HashMap<>();
+  final Map<Integer, Bomb> bombs = new HashMap<>();
   boolean startRound = true;
   final Set<Link> links = new HashSet<>();
+
+  int bombsAvailable = Constants.INITIAL_BOMBS_COUNT;
 
   public AI(Scanner scanner) {
     this.scanner = scanner;
@@ -83,6 +84,18 @@ public class AI {
             troop.setRemainingTurns(arg5);
           }
           break;
+        case "BOMB":
+          if (!bombs.containsKey(entityId)) {
+            Bomb bomb = new Bomb(entityId, owner, arg2, arg3, arg4);
+            bombs.put(entityId, bomb);
+          } else {
+            Bomb bomb = bombs.get(entityId);
+            bomb.setOwner(owner);
+            bomb.setFrom(arg2);
+            bomb.setTo(arg3);
+            bomb.setEta(arg4);
+          }
+          break;
         default:
           throw new IllegalStateException("Fucks!");
       }
@@ -114,12 +127,49 @@ public class AI {
     List<Command> commands = new ArrayList<>();
     commands.add(new Wait());
     List<Factory> myFactories = factories.values()
-      .stream().filter(factory -> factory.getOwner() == Owner.ME).collect(Collectors.toList());
+      .stream().filter(factory -> factory.getOwner() == Owner.ME)
+      .collect(Collectors.toList());
+
+    List<Factory> enemyFactories = factories.values()
+      .stream()
+      .filter(factory -> factory.getOwner() == Owner.ENEMY)
+      .sorted(Comparator.comparingInt(Factory::getCount).reversed())
+      .collect(Collectors.toList());
+
+    calculateBombCommands(enemyFactories, commands);
+    calculateDronesCommand(myFactories, commands);
+
+    commands.add(coolMessage());
+    return commands;
+  }
+
+  private void calculateBombCommands(List<Factory> enemyFactories, List<Command> commands) {
+    for (Factory enemyFactory : enemyFactories) {
+      if (bombsAvailable <= 0) {
+        return;
+      }
+      if (enemyFactory.getCount() < Constants.ENEMY_BOMB_COUNT_THRESHOLD) {
+        break;
+      }
+      Optional<Map.Entry<Factory, Integer>> myClosest = enemyFactory.getDistancesToNeighbours()
+        .entrySet().stream().filter(entry -> entry.getKey().getOwner() == Owner.ME)
+        .sorted(Map.Entry.comparingByValue())
+        .findFirst();
+      if (!myClosest.isPresent()) {
+        break;
+      }
+      Factory my = myClosest.get().getKey();
+      commands.add(new Boom(my.getId(), enemyFactory.getId()));
+      bombsAvailable--;
+    }
+  }
+
+  private void calculateDronesCommand(List<Factory> myFactories, List<Command> commands) {
     for (Factory factory : myFactories) {
       Map<Factory, Integer> neigs = factory.getDistancesToNeighbours();
       Map<Factory, Integer> scores = new HashMap<>();
       int availableCount = (int) (factory.getCount() * Constants.SEND_CYBORGS_PART) + 1;
-      if (availableCount < 2) {
+      if (availableCount < Constants.MINIMUM_DEFENDERS_KEEP) {
         continue;
       }
 
@@ -129,7 +179,7 @@ public class AI {
           continue;
         }
         int distToTarget = neigh.getValue();
-        int score = factory.getProduction() * 5 + (10 - distToTarget) + (10 - target.getCount());
+        int score = factory.getProduction() * 6 + (10 - distToTarget) + (8 - target.getCount());
         scores.put(target, score);
       }
 
@@ -153,11 +203,9 @@ public class AI {
         availableCount -= sendCount;
       }
     }
-    commands.add(coolMessage());
-    return commands;
   }
 
   private Message coolMessage() {
-    return new Message("JERONIMO!!!");
+    return new Message("Ramp and Bump!!!");
   }
 }
