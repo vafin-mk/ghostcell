@@ -22,6 +22,7 @@ task combine() {
     def doubleSeparator = "\n\n"
    //imports
     builder.append("import java.util.*;").append(separator)
+    builder.append("import java.util.stream.*;").append(separator)
     builder.append("import java.lang.*;").append(separator)
     builder.append(separator)
     //main class
