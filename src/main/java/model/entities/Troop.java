@@ -4,33 +4,33 @@ import model.Owner;
 
 public class Troop extends Entity {
 
-  private int factoryFrom;
-  private int factoryTo;
+  private int from;
+  private int to;
   private int count;
-  private int remainingTurns;
+  private int eta;
 
-  public Troop(int id, Owner owner, int factoryFrom, int factoryTo, int count, int remainingTurns) {
+  public Troop(int id, Owner owner, int from, int to, int count, int eta) {
     super(id, owner);
-    this.factoryFrom = factoryFrom;
-    this.factoryTo = factoryTo;
+    this.from = from;
+    this.to = to;
     this.count = count;
-    this.remainingTurns = remainingTurns;
+    this.eta = eta;
   }
 
-  public int getFactoryFrom() {
-    return factoryFrom;
+  public int getFrom() {
+    return from;
   }
 
-  public void setFactoryFrom(int factoryFrom) {
-    this.factoryFrom = factoryFrom;
+  public void setFrom(int from) {
+    this.from = from;
   }
 
-  public int getFactoryTo() {
-    return factoryTo;
+  public int getTo() {
+    return to;
   }
 
-  public void setFactoryTo(int factoryTo) {
-    this.factoryTo = factoryTo;
+  public void setTo(int to) {
+    this.to = to;
   }
 
   public int getCount() {
@@ -41,16 +41,16 @@ public class Troop extends Entity {
     this.count = count;
   }
 
-  public int getRemainingTurns() {
-    return remainingTurns;
+  public int getEta() {
+    return eta;
   }
 
-  public void setRemainingTurns(int remainingTurns) {
-    this.remainingTurns = remainingTurns;
+  public void setEta(int eta) {
+    this.eta = eta;
   }
 
   @Override
   public String toString() {
-    return String.format("[Troop(id = %d; owner = %s; from = %d; to = %d; count = %d; ETA = %d)]", getId(), getOwner(), factoryFrom, factoryTo, count, remainingTurns);
+    return String.format("[Troop(id = %d; owner = %s; from = %d; to = %d; count = %d; ETA = %d)]", getId(), getOwner(), from, to, count, eta);
   }
 }
