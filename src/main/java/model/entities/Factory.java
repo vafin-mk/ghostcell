@@ -8,10 +8,12 @@ public class Factory extends Entity {
 
   private int count;
   private int production;
-  private boolean sendingBomb;
+  private boolean incomingBomb;
   private Map<Factory, Integer> distancesToNeighbours = new HashMap<>();
   private List<Troop> incomingAllies = new ArrayList<>();
   private List<Troop> incomingEnemies = new ArrayList<>();
+  private int incomingAllyCount;
+  private int incomingEnemyCount;
 
   public Factory(int id, Owner owner, int count, int production) {
     super(id, owner);
@@ -35,12 +37,12 @@ public class Factory extends Entity {
     this.production = production;
   }
 
-  public boolean isSendingBomb() {
-    return sendingBomb;
+  public boolean isIncomingBomb() {
+    return incomingBomb;
   }
 
-  public void setSendingBomb(boolean sendingBomb) {
-    this.sendingBomb = sendingBomb;
+  public void setIncomingBomb(boolean incomingBomb) {
+    this.incomingBomb = incomingBomb;
   }
 
   public List<Troop> getIncomingAllies() {
@@ -49,6 +51,7 @@ public class Factory extends Entity {
 
   public void addIncomingAlly(Troop troop) {
     incomingAllies.add(troop);
+    incomingAllyCount += troop.getCount();
   }
 
   public List<Troop> getIncomingEnemies() {
@@ -57,23 +60,26 @@ public class Factory extends Entity {
 
   public void addIncomingEnemy(Troop troop) {
     incomingEnemies.add(troop);
+    incomingEnemyCount += troop.getCount();
   }
 
   public int incomingDiff() {
-    int alliesSize = 0;
-    for (Troop ally : incomingAllies) {
-      alliesSize += ally.getCount();
-    }
-    int enemySize = 0;
-    for (Troop enemy : incomingEnemies) {
-      enemySize += enemy.getCount();
-    }
-    return alliesSize - enemySize;
+    return incomingAllyCount - incomingEnemyCount;
   }
 
   public void clearWave() {
     incomingAllies.clear();
     incomingEnemies.clear();
+    incomingAllyCount = 0;
+    incomingEnemyCount = 0;
+  }
+
+  public int getIncomingAllyCount() {
+    return incomingAllyCount;
+  }
+
+  public int getIncomingEnemyCount() {
+    return incomingEnemyCount;
   }
 
   public void addNeighbour(Factory neigh, Integer distance) {
@@ -86,6 +92,16 @@ public class Factory extends Entity {
 
   public Map<Factory, Integer> getDistancesToNeighbours() {
     return Collections.unmodifiableMap(distancesToNeighbours);
+  }
+
+  public int enemiesDistSum() {
+    int dist = 0;
+    for (Map.Entry<Factory, Integer> neigh : distancesToNeighbours.entrySet()) {
+      if (neigh.getKey().getOwner() == Owner.ENEMY) {
+        dist += neigh.getValue();
+      }
+    }
+    return dist;
   }
 
   @Override

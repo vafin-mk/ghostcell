@@ -1,13 +1,13 @@
 package ai;
 
 import model.Constants;
+import model.GameState;
 import model.Link;
 import model.Owner;
 import model.commands.*;
 import model.entities.Bomb;
 import model.entities.Factory;
 import model.entities.Troop;
-import model.graph.Graph;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -16,7 +16,6 @@ public class AI {
   final Scanner scanner;
   final int NODES;
   final int EDGES;
-  final Graph graph;
 
   final Map<Integer, Factory> factories = new HashMap<>();
   final Map<Integer, Troop> troops = new HashMap<>();
@@ -29,12 +28,14 @@ public class AI {
 
   int bombsAvailable = Constants.INITIAL_BOMBS_COUNT;
 
+  int enemyPower, myPower, neutralPower, enemyUnits, myUnits, enemyProduction, myProduction;
+  GameState currentState = GameState.EARLY;
+  Factory castle; //my factory which dist to all enemies is lowest
+
   public AI(Scanner scanner) {
     this.scanner = scanner;
-    this.graph = new Graph();
     NODES = scanner.nextInt(); // the number of factories
     EDGES = scanner.nextInt(); // the number of links between factories
-//    graph.add(EDGES, scanner);
     for (int i = 0; i < EDGES; i++) {
       int factory1 = scanner.nextInt();
       int factory2 = scanner.nextInt();
@@ -54,7 +55,10 @@ public class AI {
   private void inputWorld() {
     troopsToRemove.forEach(troops::remove);
     troopsToRemove.clear();
-    bombsToRemove.forEach(bombs::remove);
+    bombsToRemove.forEach(bomb -> {
+      factories.get(bombs.get(bomb).getTo()).setIncomingBomb(false);
+      bombs.remove(bomb);
+    });
     bombsToRemove.clear();
 
     int entityCount = scanner.nextInt(); // the number of entities (e.g. factories and troops)
@@ -77,7 +81,7 @@ public class AI {
             factory.setOwner(owner);
             factory.setCount(arg2);
             factory.setProduction(arg3);
-            factory.setSendingBomb(false);
+            factory.setIncomingBomb(false);
             factory.clearWave();
           }
           break;
@@ -124,7 +128,72 @@ public class AI {
         to.addNeighbour(from, link.getDist());
       });
     }
+    recalculatePowers();
     updateWaves();
+    recalculateGameState();
+    findCastle();
+    log("%s", currentState);
+    log("castle : %s", castle);
+  }
+
+  private void recalculatePowers() {
+    enemyPower=myPower=neutralPower=enemyUnits=myUnits=enemyProduction=myProduction = 0;
+    for (Factory factory : factories.values()) {
+      switch(factory.getOwner()) {
+        case ME:
+          myPower += factory.getCount();
+          myProduction += factory.getProduction();
+          break;
+        case ENEMY:
+          enemyPower += factory.getCount();
+          enemyProduction += factory.getProduction();
+          break;
+        case NEUTRAL:
+          neutralPower += factory.getCount();
+          break;
+      }
+    }
+    for (Troop troop : troops.values()) {
+      switch(troop.getOwner()) {
+        case ME:
+          myUnits += troop.getCount();
+          break;
+        case ENEMY:
+          enemyUnits += troop.getCount();
+          break;
+      }
+    }
+  }
+
+  private void recalculateGameState() {
+    if (round < 5) {
+      currentState = GameState.EARLY;
+      return;
+    }
+    int neutrals = (int) factories.values().stream().filter(factory -> factory.getOwner() == Owner.NEUTRAL).count();
+    int my = (int) factories.values().stream().filter(factory -> factory.getOwner() == Owner.ME).count();
+    int enemies = (int) factories.values().stream().filter(factory -> factory.getOwner() == Owner.ENEMY).count();
+    if (my + enemies < neutrals) {
+      currentState = GameState.EARLY;
+    } else if ( neutrals <= 2) {
+      currentState = GameState.LATE;
+    } else {
+      currentState = GameState.MID;
+    }
+  }
+
+  private void findCastle() {
+    List<Factory> myFactories = factories.values().stream().filter(factory -> factory.getOwner() == Owner.ME).collect(Collectors.toList());
+    if (myFactories.isEmpty()) return;
+    castle = myFactories.get(0);
+    int enemyDistSum = Integer.MAX_VALUE;
+    for (Factory myFactory : myFactories) {
+      int dist = myFactory.enemiesDistSum();
+      if (dist < enemyDistSum) {
+        castle = myFactory;
+        enemyDistSum = dist;
+      }
+    }
   }
 
   private void updateWaves() {
@@ -171,14 +240,13 @@ public class AI {
   }
 
   private void calculateProductionCommands(List<Factory> myFactories, List<Command> commands) {
-    if (round < Constants.ADVANCED_TECH_ROUND_THRESHOLD) {
-      return;
-    }
     for (Factory myFactory : myFactories) {
       if (myFactory.getProduction() >= Constants.MAX_PRODUCTION) {
         continue;
       }
-      if (myFactory.getCount() >= Constants.PRODUCTION_INCREMENT_THRESHOLD) {
+      if (myFactory.getCount() >= Constants.PRODUCTION_INCREMENT_THRESHOLD
+        && myPower >= Constants.PRODUCTION_INCREMENT_THRESHOLD * 2
+        && myFactory.getCount() + myFactory.incomingDiff() > Constants.PRODUCTION_INCREMENT_THRESHOLD / 2) {
         commands.add(new Increment(myFactory.getId()));
         myFactory.setCount(myFactory.getCount() - Constants.PRODUCTION_INCREMENT_COST);
       }
@@ -186,78 +254,113 @@ public class AI {
   }
 
   private void calculateBombCommands(List<Factory> enemyFactories, List<Command> commands) {
-    if (round < Constants.ADVANCED_TECH_ROUND_THRESHOLD) {
-      return;
+    /*special condition, bomb on first round*/
+    if (round == 0) {
+      Factory my = factories.values().stream().filter(factory -> factory.getOwner() == Owner.ME).findFirst().get();
+      Factory enemy = enemyFactories.get(0);
+      if (enemy.getProduction() > 0) {
+        commands.add(new Boom(my.getId(), enemy.getId()));
+        bombsAvailable--;
+        enemy.setIncomingBomb(true);
+      }
     }
     for (Factory enemyFactory : enemyFactories) {
       if (bombsAvailable <= 0) {
         return;
       }
-      if (enemyFactory.getCount() < Constants.ENEMY_BOMB_COUNT_THRESHOLD) {
-        break;
+      if ((enemyFactory.getCount() < Constants.ENEMY_BOMB_COUNT_THRESHOLD && currentState == GameState.EARLY)
+        || enemyFactory.getProduction() <= Constants.ENEMY_BOMB_PRODUCTION_THRESHOLD
+        || enemyFactory.getIncomingAllies().size() > Constants.ENEMY_BOMB_COUNT_THRESHOLD / 3
+        || enemyFactory.isIncomingBomb()) {
+        continue;
       }
       Optional<Map.Entry<Factory, Integer>> myClosest = enemyFactory.getDistancesToNeighbours()
         .entrySet().stream().filter(entry -> entry.getKey().getOwner() == Owner.ME)
         .sorted(Map.Entry.comparingByValue())
         .findFirst();
       if (!myClosest.isPresent()) {
-        break;
+        continue;
       }
       Factory my = myClosest.get().getKey();
       commands.add(new Boom(my.getId(), enemyFactory.getId()));
       bombsAvailable--;
-      my.setSendingBomb(true);
+      enemyFactory.setIncomingBomb(true);
     }
   }
 
   private void calculateDronesCommand(List<Factory> myFactories, List<Command> commands) {
     for (Factory factory : myFactories) {
-      if (factory.isSendingBomb()) {
+      int diff = factory.incomingDiff();
+      if (diff < 0) {
+        //todo send everyone when factory lost is inevitable
         continue;
       }
       Map<Factory, Integer> neigs = factory.getDistancesToNeighbours();
       Map<Factory, Integer> scores = new HashMap<>();
-      int diff = factory.incomingDiff();
-      if (diff > 0) {
-        diff = 0;
-      }
-      int availableCount = (int) ((factory.getCount() + diff) * Constants.SEND_CYBORGS_PART) + 1;
+
+      int availableCount = (int) ((factory.getCount()) * Constants.SEND_CYBORGS_PART) + 1;
       if (availableCount < Constants.MINIMUM_DEFENDERS_KEEP) {
         continue;
       }
 
       for (Map.Entry<Factory, Integer> neigh : neigs.entrySet()) {
         Factory target = neigh.getKey();
-        if (target.getCount() > availableCount) {
+        if (target.getCount() > (availableCount + target.getIncomingAllyCount())) {
           continue;
         }
         int distToTarget = neigh.getValue();
         double score = 0;
-        score += factory.getProduction() * Constants.SCORE_MULTIPLIER_PRODUCTION;
-        score += distToTarget * Constants.SCORE_MULTIPLIER_DISTANCE;
-        score += target.getCount() * Constants.SCORE_MULTIPLIER_COUNT;
+        double prodScore = target.getProduction() * Constants.SCORE_MULTIPLIER_PRODUCTION;
+        double distScore = distToTarget * Constants.SCORE_MULTIPLIER_DISTANCE;
+        double powerScore = target.getCount() * Constants.SCORE_MULTIPLIER_COUNT;
+//        log("%s (%s/%s/%s)", target, prodScore, distScore, powerScore);
         double allyInfluence = incomingInfluence(target, target.getIncomingAllies());
         double enemyInfluence = incomingInfluence(target, target.getIncomingEnemies());
-        switch (target.getOwner()) {
-          case ME:
-            score *= Constants.MY_FACTORY_SCORE_MULTIPLIER;
-            if (enemyInfluence > allyInfluence) {
-              score *= 2.0;
+
+        if (target.getOwner() == Owner.ME) {
+          if (enemyInfluence > allyInfluence) {
+            prodScore *= 2;
+          } else if (currentState == GameState.LATE && target.getId() == castle.getId()) {
+            prodScore = 1.5 * Constants.SCORE_MULTIPLIER_PRODUCTION;
+          } else {
+            prodScore = 0;
+          }
+          score = prodScore + distScore;
+        } else {
+          if (currentState == GameState.EARLY) {
+            if (target.getOwner() == Owner.NEUTRAL && distToTarget < 10) {
+              prodScore *= 2;
+              distScore /= 2;
+              powerScore /= 2;
             }
-            break;
-          case ENEMY:
-            score *= Constants.ENEMY_FACTORY_SCORE_MULTIPLIER;
-            break;
-          case NEUTRAL:
-            break;
-          default:
-            throw new IllegalStateException("OH SHI");
+            score = prodScore + distScore + powerScore;
+          } else if (currentState == GameState.MID) {
+            if (target.getOwner() == Owner.ENEMY) {
+              prodScore /= 2;
+              distScore *= 2;
+              powerScore *= 2;
+            }
+            score = prodScore + distScore + powerScore;
+          } else { //LATE
+            distScore *= 2;
+            score = prodScore + distScore + powerScore;
+          }
+        }
+        if (target.isIncomingBomb()) {
+          Optional<Bomb> bomb = bombs.values().stream().filter(bmb -> bmb.getTo() == target.getId()).findAny();
+          if (bomb.isPresent()) {
+            Bomb bmb = bomb.get();
+            if (bmb.getEta() > target.distanceTo(factory)) {
+              score = Integer.MIN_VALUE;
+            }
+          }
         }
         scores.put(target, (int) score);
       }
 
       LinkedHashMap<Factory, Integer> sortedScores = scores.entrySet()
         .stream()
+        .filter(entry -> entry.getValue() > Integer.MIN_VALUE)
         .sorted(Map.Entry.comparingByValue(Collections.reverseOrder()))
         .collect(Collectors.toMap(
           Map.Entry::getKey,
@@ -266,6 +369,7 @@ public class AI {
           LinkedHashMap::new
         ));
 
+//      log("%s", sortedScores);
       for (Factory target : sortedScores.keySet()) {
         if (availableCount <= 0) {
           break;
@@ -274,7 +378,22 @@ public class AI {
           continue;
         }
 
-        int sendCount = Math.min(availableCount, target.getCount() + Constants.ADDITIONAL_SEIZE_CYBORGS - target.incomingDiff());
+        int sendCount = 0;
+        if (target.getOwner() == Owner.ME) {
+          sendCount = -target.incomingDiff();
+        } else {
+          sendCount = target.getCount() + Constants.ADDITIONAL_SEIZE_CYBORGS - target.incomingDiff();
+        }
+        if (target.getOwner() == Owner.ENEMY) {
+          sendCount += target.getProduction() * factory.distanceTo(target);
+        }
+
+        sendCount = Math.min(availableCount, sendCount);
+        if (target.getProduction() == 0) {
+          if (sendCount + target.incomingDiff() < Constants.PRODUCTION_INCREMENT_COST) {
+            sendCount = 0;
+          }
+        }
         if (sendCount <= 0) {
           continue;
         }
@@ -294,6 +413,10 @@ public class AI {
   }
 
   private Message coolMessage() {
-    return new Message("HammerTime!");
+    return new Message("It's a magic time!");
+  }
+
+  private void log(String format, Object...args) {
+    System.err.println(String.format(format, args));
   }
 }
