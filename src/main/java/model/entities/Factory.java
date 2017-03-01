@@ -8,7 +8,7 @@ public class Factory extends Entity {
 
   private int count;
   private int production;
-  private boolean incomingBomb;
+  private int explodeIn = Integer.MAX_VALUE;
   private Map<Factory, Integer> distancesToNeighbours = new HashMap<>();
   private List<Troop> incomingAllies = new ArrayList<>();
   private List<Troop> incomingEnemies = new ArrayList<>();
@@ -37,12 +37,12 @@ public class Factory extends Entity {
     this.production = production;
   }
 
-  public boolean isIncomingBomb() {
-    return incomingBomb;
+  public int getExplodeIn() {
+    return explodeIn;
   }
 
-  public void setIncomingBomb(boolean incomingBomb) {
-    this.incomingBomb = incomingBomb;
+  public void setExplodeIn(int explodeIn) {
+    this.explodeIn = explodeIn;
   }
 
   public List<Troop> getIncomingAllies() {
@@ -106,6 +106,6 @@ public class Factory extends Entity {
 
   @Override
   public String toString() {
-    return String.format("[Factory(id = %d; owner = %s; count = %d; production = %d)]", getId(), getOwner(), count, production);
+    return String.format("[Factory(id = %d; owner = %s; count = %d; production = %d; explodeIN = %d)]", getId(), getOwner(), count, production, explodeIn);
   }
 }

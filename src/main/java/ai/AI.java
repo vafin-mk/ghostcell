@@ -38,6 +38,13 @@ public class AI {
   GameState currentState = GameState.EARLY;
   Factory castle; //my factory which dist to all enemies is lowest
 
+  final Comparator<Factory> MAX_FACTORY_MAX_COUNT = (f1, f2) -> {
+    if (f1.getProduction() == f1.getProduction()) {
+      return Integer.compare(f2.getCount(), f1.getCount());
+    }
+    return Integer.compare(f2.getProduction(), f1.getProduction());
+  };
+
   public AI(Scanner scanner) {
     this.scanner = scanner;
     NODES = scanner.nextInt(); // the number of factories
@@ -61,10 +68,7 @@ public class AI {
   private void inputWorld() {
     troopsToRemove.forEach(troops::remove);
     troopsToRemove.clear();
-    bombsToRemove.forEach(bomb -> {
-      factories.get(bombs.get(bomb).getTo()).setIncomingBomb(false);
-      bombs.remove(bomb);
-    });
+    bombsToRemove.forEach(bombs::remove);
     bombsToRemove.clear();
 
     int entityCount = scanner.nextInt(); // the number of entities (e.g. factories and troops)
@@ -87,7 +91,11 @@ public class AI {
             factory.setOwner(owner);
             factory.setCount(arg2);
             factory.setProduction(arg3);
-            factory.setIncomingBomb(false);
+            if (factory.getExplodeIn() <= 0) {
+              factory.setExplodeIn(Integer.MAX_VALUE);
+            } else {
+              factory.setExplodeIn(factory.getExplodeIn() - 1);
+            }
             factory.clearWave();
           }
           break;
@@ -114,12 +122,19 @@ public class AI {
           if (!bombs.containsKey(entityId)) {
             Bomb bomb = new Bomb(entityId, owner, arg2, arg3, arg4);
             bombs.put(entityId, bomb);
+            if (owner == Owner.ENEMY && enemyFactories.size() == 1) {
+              Factory sender = enemyFactories.get(0);
+              myFactories.forEach(factory -> factory.setExplodeIn(factory.distanceTo(sender)));
+            }
           } else {
             Bomb bomb = bombs.get(entityId);
             bomb.setOwner(owner);
             bomb.setFrom(arg2);
             bomb.setTo(arg3);
             bomb.setEta(arg4);
+            if (owner == Owner.ME) {
+              factories.get(bomb.getTo()).setExplodeIn(arg4);
+            }
           }
           break;
         default:
@@ -254,28 +269,63 @@ public class AI {
   }
 
   private void calculateBombCommands(List<Command> commands) {
-    /*special condition, bomb on first round*/
+    /*special condition, bombs on first round*/
     if (round == 0) {
       Factory my = myFactories.get(0);
       Factory enemy = enemyFactories.get(0);
       if (enemy.getProduction() > 0) {
         commands.add(new Boom(my.getId(), enemy.getId()));
         bombsAvailable--;
-        enemy.setIncomingBomb(true);
+        enemy.setExplodeIn(my.distanceTo(enemy));
+      }
+      //if enemy has valuable neutral factories around
+      List<Factory> enemyCloseFactories = neutralFactories.stream()
+        .filter(factory -> {
+          if (factory.distanceTo(my) <= factory.distanceTo(enemy)) {
+            return false;
+          }
+          if (factory.getProduction() == 3
+            && factory.distanceTo(enemy) <= Constants.MAX_DISTANCE / 2
+            && factory.getCount() <= enemy.getCount() / 2) {
+            return true;
+          }
+          if (factory.getProduction() == 2
+            && factory.distanceTo(enemy) <= Constants.MAX_DISTANCE / 4
+            && factory.getCount() <= enemy.getCount() / 3) {
+            return true;
+          }
+          return false;
+        })
+        .sorted(MAX_FACTORY_MAX_COUNT)
+        .collect(Collectors.toList());
+
+      for (Factory enemyCloseFactory : enemyCloseFactories) {
+        if (bombsAvailable <= 0) {
+          return;
+        }
+        commands.add(new Boom(my.getId(), enemyCloseFactory.getId()));
+        bombsAvailable--;
+        enemyCloseFactory.setExplodeIn(my.distanceTo(enemyCloseFactory));
       }
     }
-    for (Factory enemyFactory : enemyFactories) {
+
+    List<Factory> valuableEnemies = enemyFactories.stream()
+      .filter(factory -> {
+      if (factory.getProduction() <= Constants.ENEMY_BOMB_PRODUCTION_THRESHOLD) return false;
+      if (factory.getIncomingAllies().size() > Constants.ENEMY_BOMB_COUNT_THRESHOLD / 3) return false;
+      if (factory.getExplodeIn() <= Constants.MAX_DISTANCE) return false;
+      if (factory.getCount() < Constants.ENEMY_BOMB_COUNT_THRESHOLD && currentState == GameState.EARLY) return false;
+      return true;
+    })
+      .sorted(MAX_FACTORY_MAX_COUNT)
+      .collect(Collectors.toList());
+    for (Factory enemyFactory : valuableEnemies) {
       if (bombsAvailable <= 0) {
         return;
       }
-      if ((enemyFactory.getCount() < Constants.ENEMY_BOMB_COUNT_THRESHOLD && currentState == GameState.EARLY)
-        || enemyFactory.getProduction() <= Constants.ENEMY_BOMB_PRODUCTION_THRESHOLD
-        || enemyFactory.getIncomingAllies().size() > Constants.ENEMY_BOMB_COUNT_THRESHOLD / 3
-        || enemyFactory.isIncomingBomb()) {
-        continue;
-      }
       Optional<Map.Entry<Factory, Integer>> myClosest = enemyFactory.getDistancesToNeighbours()
-        .entrySet().stream().filter(entry -> entry.getKey().getOwner() == Owner.ME)
+        .entrySet().stream()
+        .filter(entry -> entry.getKey().getOwner() == Owner.ME && entry.getKey().distanceTo(enemyFactory) <= Constants.MAX_DISTANCE / 2)
         .sorted(Map.Entry.comparingByValue())
         .findFirst();
       if (!myClosest.isPresent()) {
@@ -284,7 +334,7 @@ public class AI {
       Factory my = myClosest.get().getKey();
       commands.add(new Boom(my.getId(), enemyFactory.getId()));
       bombsAvailable--;
-      enemyFactory.setIncomingBomb(true);
+      enemyFactory.setExplodeIn(my.distanceTo(enemyFactory));
     }
   }
 
@@ -346,14 +396,8 @@ public class AI {
             score = prodScore + distScore + powerScore;
           }
         }
-        if (target.isIncomingBomb()) {
-          Optional<Bomb> bomb = bombs.values().stream().filter(bmb -> bmb.getTo() == target.getId()).findAny();
-          if (bomb.isPresent()) {
-            Bomb bmb = bomb.get();
-            if (bmb.getEta() > target.distanceTo(factory)) {
-              score = Integer.MIN_VALUE;
-            }
-          }
+        if (target.getExplodeIn() <= Constants.MAX_DISTANCE && target.getExplodeIn() >= factory.distanceTo(target)) {
+          score = Integer.MIN_VALUE;
         }
         scores.put(target, (int) score);
       }
