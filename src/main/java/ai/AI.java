@@ -26,6 +26,12 @@ public class AI {
   final List<Integer> bombsToRemove = new ArrayList<>();
   final List<Integer> troopsToRemove = new ArrayList<>();
 
+  List<Factory> myFactories;
+  List<Factory> enemyFactories;
+  List<Factory> neutralFactories;
+  List<Troop> myTroops;
+  List<Troop> enemyTroops;
+
   int bombsAvailable = Constants.INITIAL_BOMBS_COUNT;
 
   int enemyPower, myPower, neutralPower, enemyUnits, myUnits, enemyProduction, myProduction;
@@ -128,6 +134,11 @@ public class AI {
         to.addNeighbour(from, link.getDist());
       });
     }
+    myFactories = factories.values().stream().filter(factory -> factory.getOwner() == Owner.ME).collect(Collectors.toList());
+    enemyFactories = factories.values().stream().filter(factory -> factory.getOwner() == Owner.ENEMY).collect(Collectors.toList());
+    neutralFactories = factories.values().stream().filter(factory -> factory.getOwner() == Owner.NEUTRAL).collect(Collectors.toList());
+    myTroops = troops.values().stream().filter(troop -> troop.getOwner() == Owner.ME).collect(Collectors.toList());
+    enemyTroops = troops.values().stream().filter(troop -> troop.getOwner() == Owner.ENEMY).collect(Collectors.toList());
     recalculatePowers();
     updateWaves();
     recalculateGameState();
@@ -170,9 +181,9 @@ public class AI {
       currentState = GameState.EARLY;
       return;
     }
-    int neutrals = (int) factories.values().stream().filter(factory -> factory.getOwner() == Owner.NEUTRAL).count();
-    int my = (int) factories.values().stream().filter(factory -> factory.getOwner() == Owner.ME).count();
-    int enemies = (int) factories.values().stream().filter(factory -> factory.getOwner() == Owner.ENEMY).count();
+    int neutrals = neutralFactories.size();
+    int my = myFactories.size();
+    int enemies = enemyFactories.size();
     if (my + enemies < neutrals) {
       currentState = GameState.EARLY;
     } else if ( neutrals <= 2) {
@@ -183,7 +194,6 @@ public class AI {
   }
 
   private void findCastle() {
-    List<Factory> myFactories = factories.values().stream().filter(factory -> factory.getOwner() == Owner.ME).collect(Collectors.toList());
     if (myFactories.isEmpty()) return;
     castle = myFactories.get(0);
     int enemyDistSum = Integer.MAX_VALUE;
@@ -222,24 +232,14 @@ public class AI {
   private List<Command> calculateCommands() {
     List<Command> commands = new ArrayList<>();
 
-    List<Factory> myFactories = factories.values()
-      .stream().filter(factory -> factory.getOwner() == Owner.ME)
-      .collect(Collectors.toList());
-
-    List<Factory> enemyFactories = factories.values()
-      .stream()
-      .filter(factory -> factory.getOwner() == Owner.ENEMY)
-      .sorted(Comparator.comparingInt(Factory::getCount).reversed())
-      .collect(Collectors.toList());
-
-    calculateProductionCommands(myFactories, commands);
-    calculateBombCommands(enemyFactories, commands);
-    calculateDronesCommand(myFactories, commands);
+    calculateProductionCommands(commands);
+    calculateBombCommands(commands);
+    calculateDronesCommand(commands);
 
     return commands;
   }
 
-  private void calculateProductionCommands(List<Factory> myFactories, List<Command> commands) {
+  private void calculateProductionCommands(List<Command> commands) {
     for (Factory myFactory : myFactories) {
       if (myFactory.getProduction() >= Constants.MAX_PRODUCTION) {
         continue;
@@ -253,10 +253,10 @@ public class AI {
     }
   }
 
-  private void calculateBombCommands(List<Factory> enemyFactories, List<Command> commands) {
+  private void calculateBombCommands(List<Command> commands) {
     /*special condition, bomb on first round*/
     if (round == 0) {
-      Factory my = factories.values().stream().filter(factory -> factory.getOwner() == Owner.ME).findFirst().get();
+      Factory my = myFactories.get(0);
       Factory enemy = enemyFactories.get(0);
       if (enemy.getProduction() > 0) {
         commands.add(new Boom(my.getId(), enemy.getId()));
@@ -288,7 +288,7 @@ public class AI {
     }
   }
 
-  private void calculateDronesCommand(List<Factory> myFactories, List<Command> commands) {
+  private void calculateDronesCommand(List<Command> commands) {
     for (Factory factory : myFactories) {
       int diff = factory.incomingDiff();
       if (diff < 0) {
