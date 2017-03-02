@@ -1,5 +1,6 @@
 package model.entities;
 
+import model.Constants;
 import model.Owner;
 
 import java.util.*;
@@ -14,6 +15,8 @@ public class Factory extends Entity {
   private List<Troop> incomingEnemies = new ArrayList<>();
   private int incomingAllyCount;
   private int incomingEnemyCount;
+  private int sumDistToAllies;
+  private int sumDistToEnemies;
 
   public Factory(int id, Owner owner, int count, int production) {
     super(id, owner);
@@ -67,6 +70,21 @@ public class Factory extends Entity {
     return incomingAllyCount - incomingEnemyCount;
   }
 
+  public int influenceDiff() {
+    double allyInfluence = 0.0;
+    for (Troop troop : incomingAllies) {
+      allyInfluence += troop.getCount() * Constants.TROOP_INFLUENCE_MODIFIER_COUNT + troop.getEta() * Constants.TROOP_INFLUENCE_MODIFIER_DIST;
+    }
+    allyInfluence *= getProduction();
+
+    double enemyInfluence = 0.0;
+    for (Troop troop : incomingEnemies) {
+      enemyInfluence += troop.getCount() * Constants.TROOP_INFLUENCE_MODIFIER_COUNT + troop.getEta() * Constants.TROOP_INFLUENCE_MODIFIER_DIST;
+    }
+    enemyInfluence *= getProduction();
+    return (int)(allyInfluence - enemyInfluence);
+  }
+
   public void clearWave() {
     incomingAllies.clear();
     incomingEnemies.clear();
@@ -90,18 +108,38 @@ public class Factory extends Entity {
     return distancesToNeighbours.getOrDefault(neigh, 100500);
   }
 
+  public int distanceToClosestEnemy() {
+    int dist = Constants.MAX_DISTANCE;
+    for (Map.Entry<Factory, Integer> entry : distancesToNeighbours.entrySet()) {
+      if (entry.getKey().getOwner() == Owner.ENEMY && entry.getValue() < dist) {
+        dist = entry.getValue();
+      }
+    }
+    return dist;
+  }
+
   public Map<Factory, Integer> getDistancesToNeighbours() {
     return Collections.unmodifiableMap(distancesToNeighbours);
   }
 
-  public int enemiesDistSum() {
-    int dist = 0;
+  public int getSumDistToAllies() {
+    return sumDistToAllies;
+  }
+
+  public int getSumDistToEnemies() {
+    return sumDistToEnemies;
+  }
+
+  public void recalculateDists() {
+    sumDistToAllies = 0;
+    sumDistToEnemies = 0;
     for (Map.Entry<Factory, Integer> neigh : distancesToNeighbours.entrySet()) {
       if (neigh.getKey().getOwner() == Owner.ENEMY) {
-        dist += neigh.getValue();
+        sumDistToEnemies += neigh.getValue();
+      } else if (neigh.getKey().getOwner() == Owner.ME) {
+        sumDistToAllies += neigh.getValue();
       }
     }
-    return dist;
   }
 
   @Override
