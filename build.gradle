@@ -27,7 +27,7 @@ task combine() {
     builder.append(separator)
     //main class
     builder.append("class Player { public static void main(String args[]) {" +
-        "    new AI(new Scanner(System.in)).start();" +
+        "    new AI3(new Scanner(System.in)).start();" +
         "  }}")
     builder.append(doubleSeparator)
     //other classes
@@ -47,7 +47,7 @@ def sourceList(File dir) {
   def files = new ArrayList<File>()
   for (file in dir.listFiles()) {
     println file.name
-    if (file.name == "Player.java") {
+    if (file.name == "Player.java" || file.name == "AI.java" || file.name == "AI2.java") {
       continue
     }
     if (file.isDirectory()) {

@@ -1,6 +1,7 @@
 package model.entities;
 
 import model.Constants;
+import model.FactoryTag;
 import model.Owner;
 
 import java.util.*;
@@ -10,6 +11,7 @@ public class Factory extends Entity {
   private int count;
   private int production;
   private int explodeIn = Integer.MAX_VALUE;
+  private int recoverIn = 0;
   private Map<Factory, Integer> distancesToNeighbours = new HashMap<>();
   private List<Troop> incomingAllies = new ArrayList<>();
   private List<Troop> incomingEnemies = new ArrayList<>();
@@ -17,11 +19,17 @@ public class Factory extends Entity {
   private int incomingEnemyCount;
   private int sumDistToAllies;
   private int sumDistToEnemies;
+  private int sumDistToAll;
+  private FactoryTag tag = FactoryTag.UNKNOWN;
 
   public Factory(int id, Owner owner, int count, int production) {
     super(id, owner);
     this.count = count;
     this.production = production;
+  }
+
+  public Factory(int id) {
+    super(id, Owner.NEUTRAL);
   }
 
   public int getCount() {
@@ -118,6 +126,40 @@ public class Factory extends Entity {
     return dist;
   }
 
+  public int distanceToClosestAlly() {
+    int dist = Constants.MAX_DISTANCE;
+    for (Map.Entry<Factory, Integer> entry : distancesToNeighbours.entrySet()) {
+      if (entry.getKey().getOwner() == Owner.ME && entry.getValue() < dist) {
+        dist = entry.getValue();
+      }
+    }
+    return dist;
+  }
+
+  public Factory closestAlly() {
+    Factory closest = null;
+    int dist = Constants.MAX_DISTANCE;
+    for (Map.Entry<Factory, Integer> entry : distancesToNeighbours.entrySet()) {
+      if (entry.getKey().getOwner() == Owner.ME && entry.getValue() < dist) {
+        dist = entry.getValue();
+        closest = entry.getKey();
+      }
+    }
+    return closest;
+  }
+
+  public Factory closestEnemy() {
+    Factory closest = null;
+    int dist = Constants.MAX_DISTANCE;
+    for (Map.Entry<Factory, Integer> entry : distancesToNeighbours.entrySet()) {
+      if (entry.getKey().getOwner() == Owner.ENEMY && entry.getValue() < dist) {
+        dist = entry.getValue();
+        closest = entry.getKey();
+      }
+    }
+    return closest;
+  }
+
   public Map<Factory, Integer> getDistancesToNeighbours() {
     return Collections.unmodifiableMap(distancesToNeighbours);
   }
@@ -130,6 +172,14 @@ public class Factory extends Entity {
     return sumDistToEnemies;
   }
 
+  public int getRecoverIn() {
+    return recoverIn;
+  }
+
+  public void setRecoverIn(int recoverIn) {
+    this.recoverIn = recoverIn;
+  }
+
   public void recalculateDists() {
     sumDistToAllies = 0;
     sumDistToEnemies = 0;
@@ -140,6 +190,19 @@ public class Factory extends Entity {
         sumDistToAllies += neigh.getValue();
       }
     }
+    sumDistToAll = sumDistToAllies + sumDistToEnemies;
+  }
+
+  public FactoryTag getTag() {
+    return tag;
+  }
+
+  public void setTag(FactoryTag tag) {
+    this.tag = tag;
+  }
+
+  public int getSumDistToAll() {
+    return sumDistToAll;
   }
 
   @Override
